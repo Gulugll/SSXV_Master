@@ -6,12 +6,25 @@ import (
 	"math"
 )
 
-// DecodeRobot36 从瞬时频率序列解码 Robot36 图像。
-// visStart 为 VIS 起始位样本索引（DetectVIS 返回值）。
+// DecodeMode 按模式规格分发的通用入口（M0 仅 Robot36 有实现）。
+func DecodeMode(freq []float32, fs float32, mode ModeSpec, visStart int) *image.RGBA {
+	switch mode.Name {
+	case "Robot36":
+		return decodeWithSpec(freq, fs, mode, visStart)
+	default:
+		return nil
+	}
+}
+
+// DecodeRobot36 便捷入口：解码 Robot36（visStart 为 VIS 起始位样本索引）。
 // 同步策略：优先 9ms@1200Hz 行同步锚点；无同步（pySSTV 类文件）回退到
 // 停止位后的标称行距（150ms/行）。见 TECH_SPEC §3.4/3.6。
 func DecodeRobot36(freq []float32, fs float32, visStart int) *image.RGBA {
-	mode := Robot36()
+	return decodeWithSpec(freq, fs, Robot36(), visStart)
+}
+
+// decodeWithSpec 表驱动逐行解码（Robot36 的通用实现路径）。
+func decodeWithSpec(freq []float32, fs float32, mode ModeSpec, visStart int) *image.RGBA {
 	W, H := mode.Width, mode.Height
 
 	// VIS 头结束：起始位 + 30ms + 8位×30ms + 停止位 30ms = 300ms
@@ -91,9 +104,13 @@ func DecodeRobot36(freq []float32, fs float32, visStart int) *image.RGBA {
 	return img
 }
 
-// findSyncPulses 在 from 之后找连续低于 maxFreq、时长 ≥ minRatio×syncMs 的脉冲段起点。
+// findSyncPulses 在 from 之后找同步脉冲（<maxFreq 连续 ≥minRatio×syncMs），
+// 锚点用「频率凹陷质心」估计：对平滑/滤波造成的边缘滞后不敏感（TECH_SPEC §2.4）。
+// 质心 c ≈ 脉冲真实中心，anchor = c - syncMs/2。
+// 窗口限制在脉冲段 ±(syncMs/2) 内，防止窜入前置 1500Hz porch 或 VIS 位流。
 func findSyncPulses(freq []float32, fs float32, from int, syncMs float64, maxFreq float64) []int {
 	minLen := int(float32(syncMs) / 1000 * fs * 0.7)
+	half := int(float32(syncMs) / 2000 * fs)
 	var out []int
 	i := from
 	for i < len(freq) {
@@ -103,7 +120,36 @@ func findSyncPulses(freq []float32, fs float32, from int, syncMs float64, maxFre
 				j++
 			}
 			if j-i >= minLen {
-				out = append(out, i)
+				lo := i - half
+				if lo < from {
+					lo = from
+				}
+				hi := j + half
+				if hi > len(freq) {
+					hi = len(freq)
+				}
+				var num, den float64
+				for k := lo; k < hi; k++ {
+					w := 1350 - float64(freq[k])
+					if w <= 0 {
+						continue
+					}
+					if w > 150 {
+						w = 150
+					}
+					num += float64(k) * w
+					den += w
+				}
+				if den > 0 {
+					center := num / den
+					// 校准偏置：因果滤波使 1350Hz 穿越滞后真实边缘约半个 FM
+					// 过渡时间（带宽 2700Hz → fs/5400 样本，随采样率比例缩放；
+					// 由干净语料 E2E 校准，见 docs/PLAN_M0.md 调试记录）。
+					bias := float64(fs) / 5400
+					out = append(out, int(center-float64(syncMs)/2000*float64(fs)-bias+0.5))
+				} else {
+					out = append(out, i)
+				}
 			}
 			i = j
 		} else {
@@ -113,18 +159,37 @@ func findSyncPulses(freq []float32, fs float32, from int, syncMs float64, maxFre
 	return out
 }
 
-// sampleSegment 在 [start, start+totalMs) 内取 n 个像素（每像素窗中点采样）。
+// sampleSegment 在 [start, start+totalMs) 内取 n 个像素。
+// 每像素对窗内中心 60% 区间的瞬时频率取平均：抗噪且抑制过渡沿毛刺；
+// 窗口钳制在扫描段内（两端各留 0.5 像素，避开段间过渡区）。
 func sampleSegment(freq []float32, fs float32, start int, totalMs float64, n int) []int {
 	out := make([]int, n)
 	step := totalMs / float64(n)
+	winStart := float64(start) + step*0.2*float64(fs)/1000
+	winEnd := float64(start) + (totalMs-step*0.2)*float64(fs)/1000
 	for k := 0; k < n; k++ {
-		t := float64(start) + (float64(k)+0.5)*step*float64(fs)/1000
-		idx := int(t)
-		if idx >= len(freq) {
+		lo := float64(start) + (float64(k)+0.2)*step*float64(fs)/1000
+		hi := float64(start) + (float64(k)+0.8)*step*float64(fs)/1000
+		if lo < winStart {
+			lo = winStart
+		}
+		if hi > winEnd {
+			hi = winEnd
+		}
+		if hi <= lo {
+			hi = lo + 1
+		}
+		var sum float64
+		cnt := 0
+		for i := int(lo); i <= int(hi) && i < len(freq); i++ {
+			sum += float64(freq[i])
+			cnt++
+		}
+		if cnt == 0 {
 			out[k] = 128
 			continue
 		}
-		out[k] = FreqToByte(float64(freq[idx]))
+		out[k] = FreqToByte(sum / float64(cnt))
 	}
 	return out
 }
@@ -171,3 +236,8 @@ func ycbcrToRGB(y, cb, cr uint8) (uint8, uint8, uint8) {
 }
 
 var _ = math.Pi
+
+// DebugAnchors 导出锚点检测供流水线调试（测试用）。
+func DebugAnchors(freq []float32, fs float32, from int, syncMs float64) []int {
+	return findSyncPulses(freq, fs, from, syncMs, 1350)
+}

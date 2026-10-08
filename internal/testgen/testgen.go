@@ -184,12 +184,14 @@ func WriteWav16(x []float32, fs int) []byte {
 	copy(buf[36:], "data")
 	binary.LittleEndian.PutUint32(buf[40:], uint32(dataLen))
 	for i, v := range x {
-		s := int16(math.Round(float64(v) * 32767))
-		if s > 32767 {
-			s = 32767
-		} else if s < -32768 {
-			s = -32768
+		// 先钳制再转换：float→int16 越界回绕会把峰值样本变成反号尖峰
+		// （曾导致全部噪声语料被尖峰污染）
+		if v > 1 {
+			v = 1
+		} else if v < -1 {
+			v = -1
 		}
+		s := int16(math.Round(float64(v) * 32767))
 		binary.LittleEndian.PutUint16(buf[44+i*2:], uint16(s))
 	}
 	return buf

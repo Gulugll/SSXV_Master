@@ -1,89 +1,134 @@
 package sstv
 
-import "math"
+import (
+	"sort"
+)
 
 // DetectVIS 在瞬时频率序列中定位 VIS 头并解码 VIS 码。
 // 返回：VIS 码、起始位样本索引、是否成功。
 // 头结构（TECH_SPEC §3.2）：1900×300ms → 1200×10 → 1900×300 → 1200×30(起始位)
 // → 7 数据位 + 偶校验位（1100/1300，各 30ms）→ 1200×30(停止位)。
-// 匹配策略：与模式表 VIS 汉明 ≤2 取最近；校验位仅参考不硬门限。
+//
+// 鲁棒策略：1ms 桶中位数网格 + 结构搜索。中位数对逐样本抖动稳健；
+// 噪声下不再依赖连续 run 不被打碎。校验位仅参考不硬门限。
 func DetectVIS(freq []float32, fs float32) (uint8, int, bool) {
+	const bucketMs = 1.0
+	nB := int(float64(len(freq)) / (float64(fs) * bucketMs / 1000))
+	if nB < 900 {
+		return 0, 0, false
+	}
+	// 1ms 桶中位数
+	bucket := make([]float32, nB)
+	samplesPerBucket := int(fs * bucketMs / 1000)
+	for b := 0; b < nB; b++ {
+		seg := freq[b*samplesPerBucket : (b+1)*samplesPerBucket]
+		s := append([]float32(nil), seg...)
+		sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+		bucket[b] = s[len(s)/2]
+	}
+	// 结构搜索：分类扫描状态机（L=引导 1900±，S=同步/位 1100-1400，O=其他）。
+	// 允许连续同类桶之间夹杂 ≤2 个异类桶（毛刺容差），不依赖平滑。
+	// 结构分类前做 3 桶滑动平均（噪声下桶值 σ ~130Hz 会打碎长 run；
+	// 3-MA 把 σ 降到 ~75，且 10ms break 在 48k/1ms 桶下仍可分辨）
+	sm := make([]float32, nB)
+	for i := 0; i < nB; i++ {
+		lo, hi := i-1, i+2
+		if lo < 0 {
+			lo = 0
+		}
+		if hi > nB {
+			hi = nB
+		}
+		var sum float64
+		for k := lo; k < hi; k++ {
+			sum += float64(bucket[k])
+		}
+		sm[i] = float32(sum / float64(hi-lo))
+	}
+	isLead := func(v float32) bool { return v >= 1650 && v <= 2200 }
+	isSync := func(v float32) bool { return v >= 1050 && v <= 1450 }
+
+	// 生成行程表：[class, start, end)（class: 0=L, 1=S）
 	type run struct {
-		freq       float64
+		cls        int
 		start, end int
 	}
-	ms := func(samples int) float64 { return float64(samples) / float64(fs) * 1000 }
-	near := func(a, b, tol float64) bool { return math.Abs(a-b) <= tol }
-
-	// 粗分段：相邻样本均值漂移超过 120Hz 切段
-	runs := make([]run, 0, 64)
+	var runs []run
 	{
-		acc, cnt := float64(freq[0]), 1
-		cur := run{start: 0}
-		for i := 1; i < len(freq); i++ {
-			f := float64(freq[i])
-			if math.Abs(f-acc/float64(cnt)) > 120 {
-				cur.freq = acc / float64(cnt)
-				cur.end = i
-				runs = append(runs, cur)
-				acc, cnt = 0, 0
-				cur = run{start: i}
+		clsOf := func(v float32) int {
+			if isLead(v) {
+				return 0
 			}
-			acc += f
-			cnt++
-		}
-		cur.freq = acc / float64(cnt)
-		cur.end = len(freq)
-		runs = append(runs, cur)
-	}
-
-	median := func(seg []float32) float64 {
-		s := append([]float32(nil), seg...)
-		for i := 0; i < len(s); i++ {
-			for j := i + 1; j < len(s); j++ {
-				if s[j] < s[i] {
-					s[i], s[j] = s[j], s[i]
-				}
+			if isSync(v) {
+				return 1
 			}
+			return 2
 		}
-		return float64(s[len(s)/2])
-	}
-
-	for _, lead := range runs {
-		if !near(lead.freq, FreqVisLead, 100) || ms(lead.end-lead.start) < 200 {
-			continue
-		}
-		// 从引导段后找起始位：1200Hz 且 ≥20ms 的段
-		var startIdx = -1
-		for _, r := range runs {
-			if r.start < lead.end {
+		cur := run{clsOf(sm[0]), 0, 1}
+		for i := 1; i < nB; i++ {
+			c := clsOf(sm[i])
+			if c == cur.cls || (c == 2 && i-cur.end <= 2) { // O 容差并入
+				cur.end = i + 1
 				continue
 			}
-			if near(r.freq, FreqSync, 100) && ms(r.end-r.start) >= 20 {
-				startIdx = r.start
-				break
-			}
+			// 换类：回退检查尾部 O 桶
+			runs = append(runs, cur)
+			cur = run{c, i, i + 1}
 		}
-		if startIdx < 0 {
+		runs = append(runs, cur)
+	}
+	// 丢弃 O 行程，合并相邻同类
+	var rs []run
+	for _, r := range runs {
+		if r.cls == 2 {
 			continue
 		}
-		// 读 8 个 30ms 位（7 数据 + 校验），锚定起始位段起点
-		bit0 := startIdx + int(fs*30/1000)
+		if len(rs) > 0 && rs[len(rs)-1].cls == r.cls {
+			rs[len(rs)-1].end = r.end
+			continue
+		}
+		rs = append(rs, r)
+	}
+
+	// 模式匹配：Lead(≥200) Sync(4..60) Lead(≥200) Sync(15..60)
+	for i := 0; i+3 < len(rs); i++ {
+		r1, r2, r3, r4 := rs[i], rs[i+1], rs[i+2], rs[i+3]
+		if r1.cls != 0 || r2.cls != 1 || r3.cls != 0 || r4.cls != 1 {
+			continue
+		}
+		if r1.end-r1.start < 200 || r3.end-r3.start < 200 {
+			continue
+		}
+		if bl := r2.end - r2.start; bl < 4 || bl > 60 {
+			continue
+		}
+		if sl := r4.end - r4.start; sl < 15 {
+			// 起始位(30)与后续数据位(1100-1400)同属 S 类，会合并成长行程——
+			// 只要求 ≥15 保证含完整起始位，不设上限
+			continue
+		}
+		startBitBucket := r4.start
+		// 读 7 数据位 + 校验位（每位 30ms，取中 24ms 的均值——
+		// 高斯噪声下均值比中位数效率高 25%，SNR 10dB 时 σ≈13Hz）
 		vis := byte(0)
-		dataOnes := 0
 		good := true
-		for b := 0; b < 7; b++ {
-			segStart := bit0 + b*int(fs*30/1000)
-			segEnd := segStart + int(fs*30/1000)
-			if segEnd >= len(freq) {
+		for bit := 0; bit < 8; bit++ {
+			lo := startBitBucket + 30*(bit+1) + 3
+			hi := startBitBucket + 30*(bit+2) - 3
+			if hi >= nB {
 				good = false
 				break
 			}
-			mf := median(freq[segStart:segEnd])
-			if near(mf, FreqVisBit1, 120) {
-				vis |= 1 << b
-				dataOnes++
-			} else if !near(mf, FreqVisBit0, 120) {
+			var sum float64
+			for k := lo; k < hi; k++ {
+				sum += float64(bucket[k])
+			}
+			mean := sum / float64(hi-lo)
+			if mean >= 1000 && mean < 1200 {
+				if bit < 7 {
+					vis |= 1 << bit
+				}
+			} else if mean < 1200 || mean > 1400 {
 				good = false
 				break
 			}
@@ -91,12 +136,7 @@ func DetectVIS(freq []float32, fs float32) (uint8, int, bool) {
 		if !good {
 			continue
 		}
-		// 偶校验位（第 8 位）：7 数据位 1 的个数为奇 → 校验=1
-		if pStart := bit0 + 7*int(fs*30/1000); pStart+int(fs*30/1000) < len(freq) {
-			mf := median(freq[pStart : pStart+int(fs*30/1000)])
-			_ = mf // 仅参考，不硬门限（pySSTV/各发射机实现一致，但弱信号下不可靠）
-		}
-		return vis, startIdx, true
+		return vis, startBitBucket * samplesPerBucket, true
 	}
 	return 0, 0, false
 }

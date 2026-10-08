@@ -56,6 +56,26 @@ type LineSpec struct {
 	Repeat    int           // 本结构覆盖的行数（PD 系 =2；其余 =1）
 }
 
+// knownModes 已实现的模式表。
+var knownModes = []ModeSpec{}
+
+// ModeByVIS 按 VIS 码查模式，汉明 ≤2 容错（取最近）。
+func ModeByVIS(vis uint8) (ModeSpec, bool) {
+	all := append([]ModeSpec{Robot36()}, knownModes...)
+	best := ModeSpec{}
+	bestD := 9
+	for _, m := range all {
+		d := hamming(m.VIS, vis)
+		if d < bestD {
+			bestD, best = d, m
+		}
+	}
+	if bestD > 2 {
+		return ModeSpec{}, false
+	}
+	return best, true
+}
+
 // Robot36 模式（pySSTV 语义：偶行 sep@1500 传 Cr、奇行 sep@2300 传 Cb；
 // 分隔段只按时间窗定位，不校验频率）。
 func Robot36() ModeSpec {

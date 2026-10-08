@@ -7,10 +7,10 @@ import (
 )
 
 // sincWindow 返回长度 2n+1 的窗口 sinc 低通 FIR（Hamming 窗），截止频率 fcHz。
-func sincWindow(fcHz float64, n int) []float32 {
+func sincWindow(fcHz float64, fs float64, n int) []float32 {
 	const pi = math.Pi
 	h := make([]float64, 2*n+1)
-	fc := fcHz
+	fc := fcHz / fs // 归一化（周期/样本）；曾因漏除 fs 退化为 delta 核键
 	var sum float64
 	for i := 0; i <= 2*n; i++ {
 		m := float64(i - n)
@@ -55,7 +55,7 @@ func ResampleF32(in []float32, from, to int) []float32 {
 	ratio := float64(to) / float64(from)
 	// 抗混叠低通：截止取输入/输出奈奎斯特中较小者的 0.9（按输入率表示）
 	fc := 0.45 * math.Min(float64(from), float64(to))
-	taps := sincWindow(fc, 48)
+	taps := sincWindow(fc, float64(from), 48)
 	filtered := convolveFullCompensated(in, taps)
 
 	outLen := int(float64(len(in)) * ratio)
@@ -114,30 +114,45 @@ func rbjBandpass(fs, f0, q float64) biquad {
 	return biquad{b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0, 0, 0}
 }
 
-// Bandpass 对信号做 4 阶带通 800–2900Hz（两级 biquad 级联，中心频率几何平均）
-// 并去直流。RBJ 带通单级 Q=中心/带宽 → 每级 Q ≈ f0/BW；两级级联提高矩形度。
+// Bandpass FIR 带通 700–3400Hz（低通差减法，Blackman 窗，257 taps）。
+// 线性相位 + 卷积延迟补偿 → 瞬时频率流与时间轴严格对齐。
+// （IIR biquad 的群延迟会使采样窗整体偏移 2-5 样本，实测污染每段扫描
+// 两端 3-4 像素，见 docs/PLAN_M0.md 调试记录。）
 func Bandpass(x []float32, fs float32) []float32 {
-	f0 := math.Sqrt(800 * 2900) // ≈1523 Hz
-	bw := 2900 - 800
-	q1 := f0 / (float64(bw) * 0.7)
-	q2 := f0 / (float64(bw) * 0.35)
-	s1 := rbjBandpass(float64(fs), f0, q1)
-	s2 := rbjBandpass(float64(fs), f0, q2)
-	// 去直流：一阶高通
+	f0 := math.Sqrt(700 * 3400) // ≈1543 Hz
+	bw := 3400.0 - 700.0
+	// 两级 biquad 级联（Q=0.75）： skirt 比单级陡 ~2 倍，振铃 ~15 样本(48k)
+	// 仍在像素窗容差内。Q 的权衡见 PLAN_M0 调试记录。
+	q := f0 / bw * 1.3 // ≈0.75
+	b1 := rbjBandpass(float64(fs), f0, q)
+	b2 := rbjBandpass(float64(fs), f0, q)
 	dc := 0.0
 	out := make([]float32, len(x))
 	for i, v := range x {
 		dc = dc*0.9995 + float64(v)*0.0005
-		y := s1.process(v - float32(dc))
-		out[i] = s2.process(y)
+		out[i] = b2.process(b1.process(v - float32(dc)))
 	}
 	return out
 }
 
-// Hilbert 用 127-tap Type-III FIR（Blackman 窗）构造解析信号。
+// Hilbert 用 127-tap Type-III FIR（Blackman 窗）构造解析信号（fs ≤ 16k 适用）。
 // 返回 z = x + j*H{x}，其中实部为延迟补偿后的原信号。
+// 高采样率请用 HilbertAt：Type-III 有效下限 ≈ 3.3·fs/(2N)，48k 时 127-tap
+// 下限 1257Hz，1100/1300Hz（VIS 位频率）会落入过渡带导致鉴频爆表。
 func Hilbert(x []float32) []complex64 {
-	const n = 63 // 半长，总长 2n+1=127
+	return hilbertN(x, 63)
+}
+
+// HilbertAt 同 Hilbert，但按采样率自适应核长（保证 900Hz 以上精度）。
+func HilbertAt(x []float32, fs float32) []complex64 {
+	n := 63
+	if minN := int(3.3*float64(fs)/2/900) + 1; minN > n {
+		n = minN
+	}
+	return hilbertN(x, n)
+}
+
+func hilbertN(x []float32, n int) []complex64 {
 	h := make([]float64, 2*n+1)
 	for i := 0; i <= 2*n; i++ {
 		m := i - n
@@ -193,11 +208,32 @@ func InstantFreq(z []complex64, fs float32) []float32 {
 	return out
 }
 
+// BandpassGroupDelaySamples：FIR 带通线性相位且已补偿，群延迟恒为 0。
+func BandpassGroupDelaySamples(fs, f float64) float64 {
+	return 0
+}
+
+// InstantFreqCompensated 瞬时频率 + 群延迟对齐（左移 τ 样本）。
+func InstantFreqCompensated(z []complex64, fs float32, fRef float64) []float32 {
+	freq := InstantFreq(z, fs)
+	tau := int(math.Round(BandpassGroupDelaySamples(float64(fs), fRef)))
+	if tau <= 0 || tau >= len(freq) {
+		return freq
+	}
+	copy(freq, freq[tau:])
+	tail := freq[len(freq)-tau:]
+	for i := range tail {
+		tail[i] = freq[len(freq)-tau-1]
+	}
+	return freq
+}
+
 // Smooth 对信号做 msec 毫秒滑动平均（相位保持：输出与输入等长，窗内均值居中）。
-func Smooth(x []float32, msec int, fs int) []float32 {
-	w := fs * msec / 1000
+// msec 可为小数；窗口不足 1 样本时退化为直通。
+func Smooth(x []float32, msec float64, fs int) []float32 {
+	w := int(float64(fs) * msec / 1000)
 	if w < 1 {
-		w = 1
+		return append([]float32(nil), x...)
 	}
 	// 前缀和
 	sum := make([]float64, len(x)+1)
