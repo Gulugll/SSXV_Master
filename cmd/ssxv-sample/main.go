@@ -18,7 +18,7 @@ func main() {
 			img.Set(x, y, color.NRGBA{
 				R: uint8((x * 255) / 320),
 				G: uint8((y * 255) / 240),
-				B: uint8(((x+y)%128) * 2),
+				B: uint8(((x + y) % 128) * 2),
 				A: 255,
 			})
 		}
