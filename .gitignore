@@ -1,3 +1,6 @@
 .DS_Store
 ssxv-cli
 out/
+ssxv-cli
+sample_*.wav
+sample_*.png
