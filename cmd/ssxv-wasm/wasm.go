@@ -12,8 +12,8 @@
 package main
 
 import (
-	"image/png"
 	"bytes"
+	"image/png"
 	"syscall/js"
 
 	"ssxv/internal/pipeline"
