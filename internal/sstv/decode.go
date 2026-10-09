@@ -27,22 +27,38 @@ func decodeGeneric(freq []float32, fs float32, mode ModeSpec, visStart int) *ima
 	afterVIS := visStart + int(fs*0.300)
 
 	// 1) 行同步锚点（质心法，对滤波滞后不敏感）
-	anchors := findSyncPulses(freq, fs, afterVIS, mode.SyncMs, 1350)
-	// 2) 无同步 → 标称周期回退
-	if len(anchors) < 2 {
-		anchors = anchors[:0]
+	realAnchors := findSyncPulses(freq, fs, afterVIS, mode.SyncMs, 1350)
+	type anch struct {
+		pos  int
+		base int
+	}
+	var anchors []anch
+	if len(realAnchors) >= 2 {
+		// 虚拟首锚点（无同步，位置=afterVIS-syncMs）：覆盖位于第一个真实
+		// 同步脉冲之前的段——Scottie 行序 G,B,sync,R，首行 G/B 在首个
+		// 锚点之前；其余模式的越界行会被行号钳制自然丢弃。
+		syncSamples := int(float32(mode.SyncMs) / 1000 * fs)
+		anchors = append(anchors, anch{pos: afterVIS - syncSamples, base: -mode.Cycles[0].RowsAdv})
+		for c, a := range realAnchors {
+			anchors = append(anchors, anch{pos: a, base: c * mode.Cycles[0].RowsAdv})
+		}
+	} else {
+		// 2) 无同步 → 标称周期回退
 		step := int(float32(mode.PeriodMs) / 1000 * fs)
 		for k := 0; k < cyclesNeeded(mode, H); k++ {
-			anchors = append(anchors, afterVIS+k*step)
+			anchors = append(anchors, anch{pos: afterVIS + k*step, base: k * mode.Cycles[0].RowsAdv})
 		}
 	}
 
 	// 3) 逐 Cycle 解码：store[row][channel] = 像素
 	store := make([]map[int][]int, H)
-	for c, anchor := range anchors {
-		cyc := mode.Cycles[c%len(mode.Cycles)]
-		base := c * cyc.RowsAdv
-		pos := anchor + int(float32(mode.SyncMs)/1000*fs)
+	for c, an := range anchors {
+		// c=0 为虚拟锚点 → cycle 索引 -1（如 Robot36 第 -1 行属奇数类）；
+		// 真实锚点 i（c=i+1）→ cycle 索引 i
+		cycleIdx := c - 1
+		cyc := mode.Cycles[((cycleIdx%len(mode.Cycles))+len(mode.Cycles))%len(mode.Cycles)]
+		base := an.base
+		pos := an.pos + int(float32(mode.SyncMs)/1000*fs)
 		var cum float64
 		for _, seg := range cyc.Segs {
 			cum += seg.PorchMs

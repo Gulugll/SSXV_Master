@@ -299,11 +299,14 @@ var allModes = []ModeSpec{
 // ScottieS1/S2、PD180/240、Wraase180/120），为协议固有歧义，弱信号下
 // 可能解为相邻模式——真实解码软件行为一致。
 func ModeByVIS(vis uint8) (ModeSpec, bool) {
+	// VIS 只传 7 个数据位 + 1 个奇偶校验位；pySSTV 的 VIS_CODE（如
+	// PasokonP7 的 0xF3）把校验位含在 bit7 —— 比较时双侧掩掉 bit7。
+	vis &= 0x7F
 	best := ModeSpec{}
 	bestD := 9
 	tie := false
 	for _, m := range allModes {
-		d := hamming(m.VIS, vis)
+		d := hamming(m.VIS&0x7F, vis)
 		if d < bestD {
 			bestD, best, tie = d, m, false
 		} else if d == bestD {

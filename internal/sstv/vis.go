@@ -113,8 +113,10 @@ func DetectVIS(freq []float32, fs float32) (uint8, int, bool) {
 		vis := byte(0)
 		good := true
 		for bit := 0; bit < 8; bit++ {
-			lo := startBitBucket + 30*(bit+1) + 3
-			hi := startBitBucket + 30*(bit+2) - 3
+			// 窗口取每位中段 18ms（±6ms 余量）：结构搜索的 run 起点受
+			// 3 桶 MA 平滑影响会早偏 1-2 桶，余量防止蹭到相邻位
+			lo := startBitBucket + 30*(bit+1) + 6
+			hi := startBitBucket + 30*(bit+2) - 6
 			if hi >= nB {
 				good = false
 				break
