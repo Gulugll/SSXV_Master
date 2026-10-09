@@ -30,11 +30,16 @@ func DecodeWAVBytes(wav []byte) (image.Image, error) {
 
 // DecodeWAVResult 同上，附带模式名。
 func DecodeWAVResult(wav []byte) (DecodeResult, error) {
+	return DecodeWAVResultMode(wav, "auto")
+}
+
+// DecodeWAVResultMode 同 DecodeWAVResult，mode 指定链路（auto/sstv/ssdv）。
+func DecodeWAVResultMode(wav []byte, mode string) (DecodeResult, error) {
 	pcm, fs, err := source.ReadWav(wav)
 	if err != nil {
 		return DecodeResult{}, fmt.Errorf("pipeline: %w", err)
 	}
-	return DecodePCMResult(pcm, fs)
+	return DecodePCMResultMode(pcm, fs, mode)
 }
 
 // DecodePCM 解码 int16 PCM。在输入原生采样率上处理——Hilbert 建立时间
@@ -52,15 +57,27 @@ func DecodePCM(pcm []int16, fs int) (image.Image, error) {
 // 自动识别：先尝试 SSTV（VIS 头检测），失败则按 SSDV BPSK 链路解调
 // （TECH_SPEC §6）。SSDV 输出为 JPEG 字节，经 image/jpeg 还原。
 func DecodePCMResult(pcm []int16, fs int) (DecodeResult, error) {
+	return DecodePCMResultMode(pcm, fs, "auto")
+}
+
+// DecodePCMResultMode 按 mode 指定链路："auto"（VIS 自动识别，同上）、
+// "sstv"（强制 SSTV 链路）、"ssdv"（强制 SSDV BPSK 链路）。
+func DecodePCMResultMode(pcm []int16, fs int, mode string) (DecodeResult, error) {
 	x := make([]float32, len(pcm))
 	for i, v := range pcm {
 		x[i] = float32(v) / 32767
 	}
-
-	if r, err := decodeSSTV(x, fs); err == nil {
-		return r, nil
+	switch mode {
+	case "sstv":
+		return decodeSSTV(x, fs)
+	case "ssdv":
+		return decodeSSDV(x, fs)
+	default:
+		if r, err := decodeSSTV(x, fs); err == nil {
+			return r, nil
+		}
+		return decodeSSDV(x, fs)
 	}
-	return decodeSSDV(x, fs)
 }
 
 // decodeSSTV SSTV 链路（M0-M2）。

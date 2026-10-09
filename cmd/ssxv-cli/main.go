@@ -147,7 +147,7 @@ func cmdDecode(args []string) int {
 			return 3
 		}
 	} else {
-		res, err = pipeline.DecodeWAVResult(raw)
+		res, err = pipeline.DecodeWAVResultMode(raw, a.mode)
 		if err != nil {
 			if a.json {
 				emitJSON(map[string]any{"t": "error", "code": "E_DEMOD", "msg": err.Error()})

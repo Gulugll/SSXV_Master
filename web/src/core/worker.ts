@@ -11,11 +11,15 @@ export interface DecodeMeta {
 
 export type WorkerRequest =
   | { type: 'init' }
-  | { type: 'decode'; id: number; wav: ArrayBuffer; fileName: string }
+  | { type: 'decode'; id: number; wav: ArrayBuffer; fileName: string; mode?: DecodeMode }
+  | { type: 'decodePCM'; id: number; pcm: Int16Array; sampleRate: number; fileName: string; mode?: DecodeMode }
   // 实时链路（M4）：主线程推 int16 PCM 块，快照式整体解码
   | { type: 'liveStart'; sampleRate: number }
   | { type: 'livePush'; pcm: Int16Array }
-  | { type: 'liveSnapshot' };
+  | { type: 'liveSnapshot'; mode?: DecodeMode };
+
+// 解码链路选择："auto" VIS 自动识别 / "sstv" 强制 SSTV / "ssdv" 强制 SSDV
+export type DecodeMode = 'auto' | 'sstv' | 'ssdv';
 
 export type WorkerResponse =
   | { type: 'ready'; abi: number }
@@ -83,7 +87,7 @@ function appendLive(pcm: Int16Array): void {
   liveLen += pcm.length;
 }
 
-function liveSnapshot(): WorkerResponse {
+function liveSnapshot(mode: DecodeMode): WorkerResponse {
   const seconds = liveLen / liveFs;
   if (!liveBuf || liveLen === 0) {
     return { type: 'liveFrame', ok: false, transient: true, seconds: 0 };
@@ -93,6 +97,7 @@ function liveSnapshot(): WorkerResponse {
   const res: DecodeResult = g.ssxvDecodePCM(
     liveBuf.subarray(0, liveLen) as unknown as Uint8Array,
     liveFs,
+    mode,
   );
   const ms = Math.round(performance.now() - t0);
   if (!res.ok) {
@@ -107,11 +112,27 @@ function liveSnapshot(): WorkerResponse {
   return { type: 'liveFrame', ok: true, png, w: res.w, h: res.h, mode: res.mode, ms, seconds };
 }
 
-function decodeWavSync(wav: ArrayBuffer): { png: Uint8Array; meta: Omit<DecodeMeta, 'fileName'> } {
+function decodeWavSync(wav: ArrayBuffer, mode: DecodeMode): { png: Uint8Array; meta: Omit<DecodeMeta, 'fileName'> } {
   const g = globalThis as any;
   const bytes = new Uint8Array(wav);
   const t0 = performance.now();
-  const res: DecodeResult = g.ssxvDecodeWav(bytes);
+  const res: DecodeResult = g.ssxvDecodeWav(bytes, mode);
+  const ms = Math.round(performance.now() - t0);
+  if (!res.ok) {
+    throw new Error(res.error ?? '未知解码错误');
+  }
+  const png = new Uint8Array(res.pngLen!);
+  const n = g.ssxvGetImage(png);
+  if (n !== res.pngLen) {
+    throw new Error('E_INTERNAL: 图像字节长度不匹配');
+  }
+  return { png, meta: { w: res.w!, h: res.h!, ms, mode: res.mode ?? '?' } };
+}
+
+function decodePcmSync(pcm: Int16Array, fs: number, mode: DecodeMode): { png: Uint8Array; meta: Omit<DecodeMeta, 'fileName'> } {
+  const g = globalThis as any;
+  const t0 = performance.now();
+  const res: DecodeResult = g.ssxvDecodePCM(pcm as unknown as Uint8Array, fs, mode);
   const ms = Math.round(performance.now() - t0);
   if (!res.ok) {
     throw new Error(res.error ?? '未知解码错误');
@@ -134,10 +155,19 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     }
     if (req.type === 'decode') {
       await ensureReady();
-      const { png, meta } = decodeWavSync(req.wav);
+      const { png, meta } = decodeWavSync(req.wav, req.mode ?? 'auto');
       self.postMessage(
         { type: 'decoded', id: req.id, png, ms: meta.ms, w: meta.w, h: meta.h, mode: meta.mode, fileName: req.fileName },
         // Transferable：避免大数组拷贝
+        [png.buffer as ArrayBuffer],
+      );
+      return;
+    }
+    if (req.type === 'decodePCM') {
+      await ensureReady();
+      const { png, meta } = decodePcmSync(req.pcm, req.sampleRate, req.mode ?? 'auto');
+      self.postMessage(
+        { type: 'decoded', id: req.id, png, ms: meta.ms, w: meta.w, h: meta.h, mode: meta.mode, fileName: req.fileName },
         [png.buffer as ArrayBuffer],
       );
       return;
@@ -154,7 +184,7 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
       return;
     }
     if (req.type === 'liveSnapshot') {
-      const resp = liveSnapshot();
+      const resp = liveSnapshot(req.mode ?? 'auto');
       if (resp.type === 'liveFrame' && resp.png) {
         self.postMessage(resp, [resp.png.buffer as ArrayBuffer]);
       } else {

@@ -7,9 +7,9 @@
 // 注册的全局函数：
 //
 //	ssxvVersion() → number                      // ABI 版本
-//	ssxvDecodeWav(Uint8Array wav) → object      // {ok, w, h, ms, pngLen} 或 {ok:false, error}
+//	ssxvDecodeWav(Uint8Array wav, mode?) → object          // mode: "auto"|"sstv"|"ssdv"，缺省 auto
 //	ssxvGetImage(Uint8Array dst) → number       // 拷贝最近一次解码的 PNG 字节，返回实际长度
-//	ssxvDecodePCM(Int16Array pcm, sampleRate) → object  // 实时链路：int16 PCM 快照解码（M4）
+//	ssxvDecodePCM(Int16Array pcm, sampleRate, mode?) → object  // 实时链路：int16 PCM 快照解码（M4）
 package main
 
 import (
@@ -61,11 +61,19 @@ func decodeWav(this js.Value, args []js.Value) any {
 	wav := make([]byte, args[0].Get("byteLength").Int())
 	js.CopyBytesToGo(wav, args[0])
 
-	res, err := pipeline.DecodeWAVResult(wav)
+	res, err := pipeline.DecodeWAVResultMode(wav, argMode(args, 1))
 	if err != nil {
 		return fail("E_DEMOD: " + err.Error())
 	}
 	return encodeResult(res)
+}
+
+// argMode 取可选的字符串模式参数（"auto"|"sstv"|"ssdv"）。
+func argMode(args []js.Value, idx int) string {
+	if len(args) > idx && args[idx].Type() == js.TypeString {
+		return args[idx].String()
+	}
+	return "auto"
 }
 
 // decodePCM 实时链路：int16 PCM + 采样率快照解码（输入在原生采样率处理，
@@ -89,7 +97,7 @@ func decodePCM(this js.Value, args []js.Value) any {
 	}
 	fs := args[1].Int()
 
-	res, err := pipeline.DecodePCMResult(pcm, fs)
+	res, err := pipeline.DecodePCMResultMode(pcm, fs, argMode(args, 2))
 	if err != nil {
 		return fail("E_DEMOD: " + err.Error())
 	}

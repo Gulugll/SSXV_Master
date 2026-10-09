@@ -1,5 +1,5 @@
 // SSXVCore 适配器：UI 与核心的唯一边界（TECH_SPEC §5.2）。
-import type { DecodeMeta, WorkerResponse } from './worker';
+import type { DecodeMeta, DecodeMode, WorkerResponse } from './worker';
 
 export interface DecodeResult extends DecodeMeta {
   url: string; // blob URL
@@ -17,6 +17,29 @@ export interface LiveFrame {
 }
 
 type Listener = (msg: WorkerResponse) => void;
+
+// decodeAudioPCM 用浏览器引擎解码任意容器音频（ogg/mp3/flac/m4a…），
+// 下混为单声道 int16。decodeAudioData 会重采样到 AudioContext 采样率。
+async function decodeAudioPCM(buf: ArrayBuffer): Promise<{ pcm: Int16Array; sampleRate: number }> {
+  const ctx = new AudioContext();
+  try {
+    const audio = await ctx.decodeAudioData(buf);
+    const n = audio.length;
+    const chs = audio.numberOfChannels;
+    const chans: Float32Array[] = [];
+    for (let c = 0; c < chs; c++) chans.push(audio.getChannelData(c));
+    const pcm = new Int16Array(n);
+    for (let i = 0; i < n; i++) {
+      let v = 0;
+      for (let c = 0; c < chs; c++) v += chans[c][i];
+      v /= chs;
+      pcm[i] = Math.round(Math.max(-1, Math.min(1, v)) * 32767);
+    }
+    return { pcm, sampleRate: audio.sampleRate };
+  } finally {
+    ctx.close();
+  }
+}
 
 class SSXVCore {
   private worker: Worker;
@@ -71,7 +94,7 @@ class SSXVCore {
     return () => this.listeners.delete(l);
   }
 
-  decodeFile(file: File): Promise<DecodeResult> {
+  decodeFile(file: File, mode: DecodeMode = 'auto'): Promise<DecodeResult> {
     const id = this.nextId++;
     this.pendingFile.set(id, file.name);
     return new Promise((resolve, reject) => {
@@ -92,9 +115,27 @@ class SSXVCore {
           reject(new Error(msg.message));
         }
       });
-      file.arrayBuffer().then((buf) => {
-        this.worker.postMessage({ type: 'decode', id, wav: buf, fileName: file.name }, [buf]);
-      });
+      if (/\.wav$/i.test(file.name)) {
+        // WAV：核心内解析（保留原始采样率语义）
+        file.arrayBuffer().then((buf) => {
+          this.worker.postMessage({ type: 'decode', id, wav: buf, fileName: file.name, mode }, [buf]);
+        });
+      } else {
+        // 其他音频格式（ogg/mp3/flac/m4a…）：交给浏览器引擎解码，
+        // 得到 Float32 PCM 后转 int16 推给核心（与实时链路同路径）
+        file.arrayBuffer()
+          .then((buf) => decodeAudioPCM(buf))
+          .then(({ pcm, sampleRate }) => {
+            this.worker.postMessage(
+              { type: 'decodePCM', id, pcm, sampleRate, fileName: file.name, mode },
+              [pcm.buffer as ArrayBuffer],
+            );
+          })
+          .catch((e) => {
+            off();
+            reject(new Error('音频解码失败: ' + (e instanceof Error ? e.message : String(e))));
+          });
+      }
     });
   }
 
@@ -110,7 +151,7 @@ class SSXVCore {
     this.worker.postMessage({ type: 'livePush', pcm }, [pcm.buffer as ArrayBuffer]);
   }
 
-  liveSnapshot(): Promise<LiveFrame> {
+  liveSnapshot(mode: DecodeMode = 'auto'): Promise<LiveFrame> {
     if (this.livePending) {
       return Promise.resolve({ ok: false, transient: true, seconds: -1 });
     }
@@ -120,7 +161,7 @@ class SSXVCore {
         this.livePending = false;
         resolve(f);
       });
-      this.worker.postMessage({ type: 'liveSnapshot' });
+      this.worker.postMessage({ type: 'liveSnapshot', mode });
     });
   }
 }

@@ -1,0 +1,12 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "SSXV_Manager" [level=1] [ref=e5]
+    - generic [ref=e6]: SSTV 17 模式 / SSDV 解码 · 实时接收
+    - generic [ref=e7]: 核心加载中…
+  - generic [ref=e8]:
+    - paragraph [ref=e9]: 拖放 WAV 音频到此处，或
+    - generic [ref=e10] [cursor=pointer]: 选择文件
+  - generic [ref=e11]:
+    - heading "实时接收" [level=2] [ref=e12]
+    - paragraph [ref=e13]: 打开麦克风接收 SSTV/SSDV 信号（建议直接对准解调器音频输出）
+    - button "开始接收" [disabled] [ref=e14]

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { core, type DecodeResult, type LiveFrame } from './core/ssxvCore';
+import type { DecodeMode } from './core/worker';
 
 interface GalleryItem extends DecodeResult {
   id: number;
@@ -15,6 +16,8 @@ export default function App() {
   const [current, setCurrent] = useState<GalleryItem | null>(null);
   const [live, setLive] = useState<LiveFrame | null>(null);
   const [liveOn, setLiveOn] = useState(false);
+  const [decMode, setDecMode] = useState<DecodeMode>('auto');
+  const modeRef = useRef<DecodeMode>('auto');
   const audioRef = useRef<{
     ctx: AudioContext;
     stream: MediaStream;
@@ -33,7 +36,7 @@ export default function App() {
     setBusy(true);
     setErr(null);
     try {
-      const r = await core.decodeFile(file);
+      const r = await core.decodeFile(file, modeRef.current);
       const item: GalleryItem = { ...r, id: Date.now(), at: new Date().toLocaleTimeString() };
       setItems((prev) => [item, ...prev]);
       setCurrent(item);
@@ -117,7 +120,7 @@ export default function App() {
 
       // 周期快照解码（整段重解，60s 音频 ~1s 内，可接受）
       const tick = async () => {
-        const fr = await core.liveSnapshot();
+        const fr = await core.liveSnapshot(modeRef.current);
         if (fr.seconds < 0) return; // 单飞去重
         setLive(fr);
         if (fr.ok && fr.url) lastLiveRef.current = fr as LiveFrame & { url: string };
@@ -167,18 +170,34 @@ export default function App() {
           <p>解码中…</p>
         ) : (
           <>
-            <p>拖放 WAV 音频到此处，或</p>
-            <label className="btn">
-              选择文件
-              <input
-                type="file"
-                accept=".wav,audio/wav"
+            <p>拖放音频文件到此处（WAV / OGG / MP3 / FLAC / M4A…），或</p>
+            <div className="moderow">
+              <label className="btn">
+                选择文件
+                <input
+                  type="file"
+                  accept=".wav,.ogg,.oga,.mp3,.flac,.m4a,.aac,.opus,.webm,audio/*"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleFile(f);
+                  }}
+                />
+              </label>
+              <select
+                className="modeselect"
+                data-testid="mode-select"
+                value={decMode}
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleFile(f);
+                  const m = e.target.value as DecodeMode;
+                  setDecMode(m);
+                  modeRef.current = m;
                 }}
-              />
-            </label>
+              >
+                <option value="auto">模式：自动识别</option>
+                <option value="sstv">模式：强制 SSTV</option>
+                <option value="ssdv">模式：强制 SSDV</option>
+              </select>
+            </div>
           </>
         )}
       </section>

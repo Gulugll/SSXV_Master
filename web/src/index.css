@@ -59,6 +59,21 @@ h2 { font-size: 16px; margin: 0 0 8px; color: #444; }
 .btn:hover { background: #245cd4; }
 .btn input { display: none; }
 
+.moderow {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+}
+.modeselect {
+  padding: 8px 10px;
+  border: 1px solid #c9cfda;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  color: #1c1e21;
+}
+
 .error {
   margin-top: 12px;
   padding: 10px 14px;
