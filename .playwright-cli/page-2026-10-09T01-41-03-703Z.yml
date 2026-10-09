@@ -1,0 +1,8 @@
+- generic [ref=f5e3]:
+  - banner [ref=f5e4]:
+    - heading "SSXV_Manager" [level=1] [ref=f5e5]
+    - generic [ref=f5e6]: SSTV / SSDV 解码 · Robot36 已支持
+    - generic [ref=f5e7]: 核心加载中…
+  - generic [ref=f5e8]:
+    - paragraph [ref=f5e9]: 拖放 WAV 音频到此处，或
+    - generic [ref=f5e10] [cursor=pointer]: 选择文件

@@ -1,0 +1,100 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, 'PingFang SC', 'Segoe UI', sans-serif;
+  background: #f5f6f8;
+  color: #1c1e21;
+}
+
+* { box-sizing: border-box; }
+
+.app {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+h1 { font-size: 24px; margin: 0; }
+h2 { font-size: 16px; margin: 0 0 8px; color: #444; }
+
+.sub { color: #667; font-size: 13px; }
+
+.status {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #ddd;
+}
+.status.ok { background: #d3f0d3; color: #1a6b1a; }
+.status.bad { background: #f8d3d3; color: #8b1a1a; }
+
+.dropzone {
+  border: 2px dashed #b9c0cc;
+  border-radius: 12px;
+  padding: 36px;
+  text-align: center;
+  background: #fff;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone.over { border-color: #4a7dff; background: #f0f5ff; }
+.dropzone.busy { opacity: 0.6; }
+
+.btn {
+  display: inline-block;
+  padding: 8px 20px;
+  background: #2f6fed;
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn:hover { background: #245cd4; }
+.btn input { display: none; }
+
+.error {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fde8e8;
+  color: #8b1a1a;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.result { margin-top: 24px; }
+.result img {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  image-rendering: pixelated;
+  max-width: 100%;
+}
+.meta { color: #556; font-size: 13px; margin: 4px 0 10px; }
+
+.gallery { margin-top: 28px; }
+.gallery ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.gallery li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e2e5ea;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.gallery li.sel { border-color: #2f6fed; }
+.gallery img { border-radius: 4px; image-rendering: pixelated; }
