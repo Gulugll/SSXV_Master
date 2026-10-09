@@ -42,20 +42,20 @@ type ScanSeg struct {
 
 // CycleSpec 一个锚点周期。
 type CycleSpec struct {
-	RowsAdv int       // 本周期推进的行数（PD=2，其余=1）
+	RowsAdv int // 本周期推进的行数（PD=2，其余=1）
 	Segs    []ScanSeg
 }
 
 // ModeSpec 模式规格。
 type ModeSpec struct {
-	Name      string
-	VIS       uint8
-	Width     int
-	Height    int
-	Color     ColorMode
-	SyncMs    float64     // 锚点同步脉冲时长 @1200Hz
-	PeriodMs  float64     // 锚点周期（行/双行时长），用于无同步回退与实时倍率统计
-	Cycles    []CycleSpec // 逐锚点轮替（多数模式长度 1；Robot36 为 2）
+	Name     string
+	VIS      uint8
+	Width    int
+	Height   int
+	Color    ColorMode
+	SyncMs   float64     // 锚点同步脉冲时长 @1200Hz
+	PeriodMs float64     // 锚点周期（行/双行时长），用于无同步回退与实时倍率统计
+	Cycles   []CycleSpec // 逐锚点轮替（多数模式长度 1；Robot36 为 2）
 }
 
 // 频率常量（Hz），pySSTV sstv.py 原值。

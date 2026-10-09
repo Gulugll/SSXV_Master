@@ -89,7 +89,7 @@ export default function App() {
         <section className="result" data-testid="result">
           <h2>解码结果</h2>
           <p className="meta" data-testid="meta">
-            {current.fileName} · {current.w}×{current.h} · {current.ms}ms
+            {current.fileName} · {current.mode} · {current.w}×{current.h} · {current.ms}ms
           </p>
           <img src={current.url} alt="解码结果" width={current.w * 2} data-testid="decoded-img" />
         </section>

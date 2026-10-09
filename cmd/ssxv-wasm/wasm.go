@@ -42,20 +42,21 @@ func decodeWav(this js.Value, args []js.Value) any {
 	wav := make([]byte, args[0].Get("byteLength").Int())
 	js.CopyBytesToGo(wav, args[0])
 
-	img, err := pipeline.DecodeWAVBytes(wav)
+	res, err := pipeline.DecodeWAVResult(wav)
 	if err != nil {
 		return fail("E_DEMOD: " + err.Error())
 	}
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
+	if err := png.Encode(&buf, res.Image); err != nil {
 		return fail("E_INTERNAL: png encode: " + err.Error())
 	}
 	lastPNG = buf.Bytes()
-	b := img.Bounds()
+	b := res.Image.Bounds()
 	return map[string]any{
 		"ok":     true,
 		"w":      b.Dx(),
 		"h":      b.Dy(),
+		"mode":   res.Mode,
 		"pngLen": len(lastPNG),
 	}
 }

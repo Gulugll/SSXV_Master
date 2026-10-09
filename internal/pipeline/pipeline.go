@@ -10,19 +10,43 @@ import (
 	"ssxv/internal/sstv"
 )
 
-// DecodeWAVBytes 解码 WAV 字节流中的 SSTV 图像（M0: Robot36）。
+// DecodeResult 解码结果。
+type DecodeResult struct {
+	Image image.Image
+	Mode  string // 检测到的模式名（如 "Robot36"）
+}
+
+// DecodeWAVBytes 解码 WAV 字节流中的 SSTV 图像。
 func DecodeWAVBytes(wav []byte) (image.Image, error) {
+	r, err := DecodeWAVResult(wav)
+	if err != nil {
+		return nil, err
+	}
+	return r.Image, nil
+}
+
+// DecodeWAVResult 同上，附带模式名。
+func DecodeWAVResult(wav []byte) (DecodeResult, error) {
 	pcm, fs, err := source.ReadWav(wav)
 	if err != nil {
-		return nil, fmt.Errorf("pipeline: %w", err)
+		return DecodeResult{}, fmt.Errorf("pipeline: %w", err)
 	}
-	return DecodePCM(pcm, fs)
+	return DecodePCMResult(pcm, fs)
 }
 
 // DecodePCM 解码 int16 PCM。在输入原生采样率上处理——Hilbert 建立时间
 // 以样本数计（~10 样本），采样率越高时间上越窄（48k ≈ 0.2ms），
 // 低采样率（8k）会污染扫描段两端 1-4 像素（M0 调试记录，PLAN_M0.md）。
 func DecodePCM(pcm []int16, fs int) (image.Image, error) {
+	r, err := DecodePCMResult(pcm, fs)
+	if err != nil {
+		return nil, err
+	}
+	return r.Image, nil
+}
+
+// DecodePCMResult 同 DecodePCM，附带模式名。
+func DecodePCMResult(pcm []int16, fs int) (DecodeResult, error) {
 	x := make([]float32, len(pcm))
 	for i, v := range pcm {
 		x[i] = float32(v) / 32767
@@ -37,11 +61,11 @@ func DecodePCM(pcm []int16, fs int) (image.Image, error) {
 
 	vis, start, ok := sstv.DetectVIS(freq, float32(fs))
 	if !ok {
-		return nil, fmt.Errorf("pipeline: 未识别到 VIS 头")
+		return DecodeResult{}, fmt.Errorf("pipeline: 未识别到 VIS 头")
 	}
 	mode, vok := sstv.ModeByVIS(vis)
 	if !vok {
-		return nil, fmt.Errorf("pipeline: 未知 VIS %#02x（M0 仅 Robot36）", vis)
+		return DecodeResult{}, fmt.Errorf("pipeline: 未知 VIS %#02x", vis)
 	}
-	return sstv.DecodeMode(freq, float32(fs), mode, start), nil
+	return DecodeResult{Image: sstv.DecodeMode(freq, float32(fs), mode, start), Mode: mode.Name}, nil
 }

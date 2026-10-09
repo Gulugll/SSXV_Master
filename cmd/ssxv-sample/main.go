@@ -2,16 +2,34 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 
+	"ssxv/internal/sstv"
 	"ssxv/internal/testgen"
 )
 
 func main() {
+	modeName := flag.String("mode", "Robot36", "模式名")
+	flag.Parse()
+
+	modes := map[string]sstv.ModeSpec{
+		"Robot36": sstv.Robot36(), "MartinM1": sstv.MartinM1(), "MartinM2": sstv.MartinM2(),
+		"ScottieS1": sstv.ScottieS1(), "ScottieS2": sstv.ScottieS2(), "ScottieDX": sstv.ScottieDX(),
+		"PD90": sstv.PD90(), "PD120": sstv.PD120(), "PD160": sstv.PD160(),
+		"PD180": sstv.PD180(), "PD240": sstv.PD240(), "PD290": sstv.PD290(),
+		"WraaseSC2180": sstv.WraaseSC2180(), "WraaseSC2120": sstv.WraaseSC2120(),
+		"PasokonP3": sstv.PasokonP3(), "PasokonP5": sstv.PasokonP5(), "PasokonP7": sstv.PasokonP7(),
+	}
+	mode, ok := modes[*modeName]
+	if !ok {
+		fmt.Fprintln(os.Stderr, "未知模式:", *modeName)
+		os.Exit(1)
+	}
 	img := image.NewNRGBA(image.Rect(0, 0, 320, 240))
 	for y := 0; y < 240; y++ {
 		for x := 0; x < 320; x++ {
@@ -27,8 +45,8 @@ func main() {
 	png.Encode(pngWant, img)
 	pngWant.Close()
 
-	wav, _ := os.Create("sample_robot36.wav")
-	wav.Write(testgen.WriteWav16(testgen.Robot36Tone(img, 48000), 48000))
+	wav, _ := os.Create("sample_" + *modeName + ".wav")
+	wav.Write(testgen.WriteWav16(testgen.ModeTone(mode, img, 48000), 48000))
 	wav.Close()
-	fmt.Println("生成: sample_robot36.wav (48kHz) + sample_want.png")
+	fmt.Printf("生成: sample_%s.wav (%dHz, %dx%d) + sample_want.png\n", *modeName, 48000, mode.Width, mode.Height)
 }
