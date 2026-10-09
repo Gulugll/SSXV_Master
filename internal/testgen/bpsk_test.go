@@ -76,15 +76,14 @@ func TestBPSKAddAWGN(t *testing.T) {
 			t.Fatal("同种子噪声应一致")
 		}
 	}
-	// SNR 以 200Hz 信号带内计：全带噪声功率 = 带内 × (fs/baud)
-	// → 全带功率比 = 10^(30/10) / 240 ≈ 4.17
+	// SNR 以 2.7kHz 通信声道计：全带功率比 = 10^(30/10) / (48000/2700) ≈ 56
 	var sp, np float64
 	for i := range x {
 		sp += float64(x[i]) * float64(x[i])
 		np += float64(y[i]-x[i]) * float64(y[i]-x[i])
 	}
 	ratio := sp / np
-	want := math.Pow(10, 30.0/10) / (float64(48000) / BPSKBaud)
+	want := math.Pow(10, 30.0/10) / (48000.0 / 2700.0)
 	if ratio < want/2 || ratio > want*2 {
 		t.Errorf("全带功率比 %.2f, 期望 ~%.2f", ratio, want)
 	}
