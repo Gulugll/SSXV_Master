@@ -4,3 +4,6 @@ out/
 ssxv-cli
 sample_*.wav
 sample_*.png
+web/node_modules
+web/dist
+web/public/wasm/ssxv.wasm
