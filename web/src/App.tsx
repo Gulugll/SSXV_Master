@@ -7,6 +7,29 @@ interface GalleryItem extends DecodeResult {
   at: string;
 }
 
+// SSTV 具体模式（与 sstv 包 ModeByName 名称一致）
+const SSTV_MODES: { name: string; label: string }[] = [
+  { name: 'Robot36', label: 'Robot 36' },
+  { name: 'MartinM1', label: 'Martin M1' },
+  { name: 'MartinM2', label: 'Martin M2' },
+  { name: 'ScottieS1', label: 'Scottie S1' },
+  { name: 'ScottieS2', label: 'Scottie S2' },
+  { name: 'ScottieDX', label: 'Scottie DX' },
+  { name: 'PD90', label: 'PD 90' },
+  { name: 'PD120', label: 'PD 120' },
+  { name: 'PD160', label: 'PD 160' },
+  { name: 'PD180', label: 'PD 180' },
+  { name: 'PD240', label: 'PD 240' },
+  { name: 'PD290', label: 'PD 290' },
+  { name: 'WraaseSC2180', label: 'Wraase SC2-180' },
+  { name: 'WraaseSC2120', label: 'Wraase SC2-120' },
+  { name: 'PasokonP3', label: 'Pasokon P3' },
+  { name: 'PasokonP5', label: 'Pasokon P5' },
+  { name: 'PasokonP7', label: 'Pasokon P7' },
+];
+
+type LinkType = 'auto' | 'sstv' | 'ssdv';
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -16,8 +39,13 @@ export default function App() {
   const [current, setCurrent] = useState<GalleryItem | null>(null);
   const [live, setLive] = useState<LiveFrame | null>(null);
   const [liveOn, setLiveOn] = useState(false);
-  const [decMode, setDecMode] = useState<DecodeMode>('auto');
+  const [linkType, setLinkType] = useState<LinkType>('auto');
+  const [sstvMode, setSstvMode] = useState('');
+  // 传给核心的 mode 串："auto" | "sstv" | "sstv:<Name>" | "ssdv"
   const modeRef = useRef<DecodeMode>('auto');
+  const setMode = (t: LinkType, sm: string) => {
+    modeRef.current = t === 'auto' ? 'auto' : t === 'ssdv' ? 'ssdv' : sm ? `sstv:${sm}` : 'sstv';
+  };
   const audioRef = useRef<{
     ctx: AudioContext;
     stream: MediaStream;
@@ -185,17 +213,41 @@ export default function App() {
               </label>
               <select
                 className="modeselect"
-                data-testid="mode-select"
-                value={decMode}
+                data-testid="link-select"
+                value={linkType}
                 onChange={(e) => {
-                  const m = e.target.value as DecodeMode;
-                  setDecMode(m);
-                  modeRef.current = m;
+                  const t = e.target.value as LinkType;
+                  setLinkType(t);
+                  setMode(t, sstvMode);
                 }}
               >
-                <option value="auto">模式：自动识别</option>
-                <option value="sstv">模式：强制 SSTV</option>
-                <option value="ssdv">模式：强制 SSDV</option>
+                <option value="auto">信号：自动识别</option>
+                <option value="sstv">信号：SSTV</option>
+                <option value="ssdv">信号：SSDV</option>
+              </select>
+              <select
+                className="modeselect"
+                data-testid="mode-select"
+                value={linkType === 'auto' ? '' : linkType === 'ssdv' ? '200' : sstvMode}
+                disabled={linkType !== 'sstv'}
+                onChange={(e) => {
+                  const m = e.target.value;
+                  setSstvMode(m);
+                  setMode(linkType, m);
+                }}
+              >
+                {linkType === 'auto' && <option value="">—</option>}
+                {linkType === 'ssdv' && <option value="200">SSDV 200 bps</option>}
+                {linkType === 'sstv' && (
+                  <>
+                    <option value="">模式自动(VIS)</option>
+                    {SSTV_MODES.map((m) => (
+                      <option key={m.name} value={m.name}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
             </div>
           </>

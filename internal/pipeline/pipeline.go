@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"strings"
 
 	"ssxv/internal/dsp"
 	"ssxv/internal/source"
@@ -60,20 +61,24 @@ func DecodePCMResult(pcm []int16, fs int) (DecodeResult, error) {
 	return DecodePCMResultMode(pcm, fs, "auto")
 }
 
-// DecodePCMResultMode 按 mode 指定链路："auto"（VIS 自动识别，同上）、
-// "sstv"（强制 SSTV 链路）、"ssdv"（强制 SSDV BPSK 链路）。
+// DecodePCMResultMode 按 mode 指定链路：
+//   - "auto"：VIS 自动识别（同 DecodePCMResult）
+//   - "sstv" / "sstv:<ModeName>"：强制 SSTV 链路；带名字时跳过 VIS 模式
+//     判决、按名解码（VIS 仍用于定位传输起点）
+//   - "ssdv"：强制 SSDV BPSK 链路
 func DecodePCMResultMode(pcm []int16, fs int, mode string) (DecodeResult, error) {
 	x := make([]float32, len(pcm))
 	for i, v := range pcm {
 		x[i] = float32(v) / 32767
 	}
-	switch mode {
-	case "sstv":
-		return decodeSSTV(x, fs)
-	case "ssdv":
+	switch {
+	case mode == "ssdv":
 		return decodeSSDV(x, fs)
+	case mode == "sstv" || strings.HasPrefix(mode, "sstv:"):
+		name := strings.TrimPrefix(strings.TrimPrefix(mode, "sstv"), ":")
+		return decodeSSTVNamed(x, fs, name)
 	default:
-		if r, err := decodeSSTV(x, fs); err == nil {
+		if r, err := decodeSSTVNamed(x, fs, ""); err == nil {
 			return r, nil
 		}
 		return decodeSSDV(x, fs)
@@ -82,6 +87,11 @@ func DecodePCMResultMode(pcm []int16, fs int, mode string) (DecodeResult, error)
 
 // decodeSSTV SSTV 链路（M0-M2）。
 func decodeSSTV(x []float32, fs int) (DecodeResult, error) {
+	return decodeSSTVNamed(x, fs, "")
+}
+
+// decodeSSTVNamed SSTV 链路；name 非空时按名强制模式（VIS 仅定位起点）。
+func decodeSSTVNamed(x []float32, fs int, name string) (DecodeResult, error) {
 	// 温和 IIR 带通（2 阶 Butterworth 700-3400，Q≈0.57）：把解调噪声带宽从
 	// 24kHz 压到 ~2.7kHz（-9.5dB），振铃仅 ~6 样本（0.12ms），不污染像素窗。
 	// 窄带 FIR 方案已被实测否决（阶跃振铃拖尾 ~10ms，U 形误差，见 PLAN_M0）。
@@ -94,9 +104,18 @@ func decodeSSTV(x []float32, fs int) (DecodeResult, error) {
 	if !ok {
 		return DecodeResult{}, fmt.Errorf("pipeline: 未识别到 VIS 头")
 	}
-	mode, vok := sstv.ModeByVIS(vis)
-	if !vok {
-		return DecodeResult{}, fmt.Errorf("pipeline: 未知 VIS %#02x", vis)
+	var mode sstv.ModeSpec
+	var vok bool
+	if name == "" {
+		mode, vok = sstv.ModeByVIS(vis)
+		if !vok {
+			return DecodeResult{}, fmt.Errorf("pipeline: 未知 VIS %#02x", vis)
+		}
+	} else {
+		mode, vok = sstv.ModeByName(name)
+		if !vok {
+			return DecodeResult{}, fmt.Errorf("pipeline: 未知模式 %q", name)
+		}
 	}
 	return DecodeResult{Image: sstv.DecodeMode(freq, float32(fs), mode, start), Mode: mode.Name}, nil
 }

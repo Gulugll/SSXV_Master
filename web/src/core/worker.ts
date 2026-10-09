@@ -18,8 +18,9 @@ export type WorkerRequest =
   | { type: 'livePush'; pcm: Int16Array }
   | { type: 'liveSnapshot'; mode?: DecodeMode };
 
-// 解码链路选择："auto" VIS 自动识别 / "sstv" 强制 SSTV / "ssdv" 强制 SSDV
-export type DecodeMode = 'auto' | 'sstv' | 'ssdv';
+// 解码链路选择："auto" VIS 自动识别 / "sstv" 强制 SSTV（VIS 判模式）/
+// "sstv:<Name>" 强制指定 SSTV 模式 / "ssdv" 强制 SSDV
+export type DecodeMode = 'auto' | 'ssdv' | 'sstv' | `sstv:${string}`;
 
 export type WorkerResponse =
   | { type: 'ready'; abi: number }

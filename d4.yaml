@@ -1,0 +1,31 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "SSXV_Manager" [level=1] [ref=e5]
+    - generic [ref=e6]: SSTV 17 模式 / SSDV 解码 · 实时接收
+    - generic [ref=e7]: 核心就绪
+  - generic [ref=e8]:
+    - paragraph [ref=e9]: 拖放音频文件到此处（WAV / OGG / MP3 / FLAC / M4A…），或
+    - generic [ref=e18]:
+      - generic [ref=e19] [cursor=pointer]: 选择文件
+      - combobox [ref=e20] [cursor=pointer]:
+        - option "信号：自动识别"
+        - option "信号：SSTV"
+        - option "信号：SSDV" [selected]
+      - combobox [disabled] [ref=e21]:
+        - option "SSDV 200 bps" [selected]
+  - generic [ref=e14]:
+    - heading "实时接收" [level=2] [ref=e15]
+    - paragraph [ref=e16]: 打开麦克风接收 SSTV/SSDV 信号（建议直接对准解调器音频输出）
+    - button "开始接收" [ref=e17] [cursor=pointer]
+  - generic [ref=e22]:
+    - heading "解码结果" [level=2] [ref=e23]
+    - paragraph [ref=e24]: sample_MartinM1.wav · MartinM1 · 320×256 · 4115ms
+    - img "解码结果" [ref=e25]
+  - generic [ref=e26]:
+    - heading "图库（本次会话）" [level=2] [ref=e27]
+    - list [ref=e28]:
+      - listitem [ref=e29] [cursor=pointer]:
+        - img "sample_MartinM1.wav" [ref=e30]
+        - generic [ref=e31]:
+          - text: sample_MartinM1.wav
+          - generic [ref=e32]: 320×256 · 20:18:27

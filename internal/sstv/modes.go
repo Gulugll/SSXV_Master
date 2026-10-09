@@ -318,3 +318,13 @@ func ModeByVIS(vis uint8) (ModeSpec, bool) {
 	}
 	return best, true
 }
+
+// ModeByName 按名称精确查模式（显式模式解码用，如 "Robot36"）。
+func ModeByName(name string) (ModeSpec, bool) {
+	for _, m := range allModes {
+		if m.Name == name {
+			return m, true
+		}
+	}
+	return ModeSpec{}, false
+}

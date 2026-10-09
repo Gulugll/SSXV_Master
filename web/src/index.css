@@ -61,17 +61,36 @@ h2 { font-size: 16px; margin: 0 0 8px; color: #444; }
 
 .moderow {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: center;
   align-items: center;
+  flex-wrap: wrap;
 }
+
 .modeselect {
-  padding: 8px 10px;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 8px 32px 8px 14px;
   border: 1px solid #c9cfda;
   border-radius: 8px;
-  background: #fff;
+  background:
+    #fff url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23667' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
   font-size: 13px;
   color: #1c1e21;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.modeselect:hover:not(:disabled) { border-color: #2f6fed; }
+.modeselect:focus-visible {
+  outline: none;
+  border-color: #2f6fed;
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.15);
+}
+.modeselect:disabled {
+  color: #9aa1ad;
+  background-color: #f3f4f6;
+  cursor: not-allowed;
 }
 
 .error {
