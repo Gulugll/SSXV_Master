@@ -16,8 +16,12 @@
   - 同步锚点用「频率凹陷质心」而非阈值穿越（对滤波滞后不敏感）+ 校准偏置 fs/5400
   - SNR 口径：以 700-3400Hz 带内计（全带 24kHz 口径对窄带 FM 过于严苛）
 - 像素采样：像素窗中心 60-80% 区间均值；E2E 验收双口径：全图 ≥98% + 内部（去两端 2px 过渡列）≥99.3%
+- **IQ 链路（M4-2）**：语义=IF 偏移基带（inst_freq=IF+音频）；架构=粗估 IF（鉴频分位法）→ 复下变频取实部 → **完全复用实链路**（带通/Hilbert/VIS）→ 同步凹槽内侧半窗中位数精校残差；勿在复域另起炉灶。IQ 合成语料必须小数进位。IQ 干净阈值 0.94/0.93（瞬时过渡+EMA 与带限形状差异，固有）
+- **实时链路（M4-1）**：快照式整体重解（worker 累积 PCM，2s 一拍），不做流式增量；麦克风约束 EC/NS/AGC 全关
+- **Tauri（M4-3）**：web/src-tauri，`npx tauri build --bundles app`（DMG 需挂载 /Volumes，沙箱必拦）；后台命令需 `source ~/.cargo/env`；Rust 在 ~/.cargo（rustup stable）
 
-## 状态
-- M0 已完成并合并 main（2026-10-08）：Robot36 表驱动解码 + VIS 识别 + testgen 编码器 + CLI，65.8× 实时（目标 4×）
-- 待做：M1 WASM+React Web 壳 → M2 全 SSTV 模式表 → M3 SSDV（RS 移植对拍 Karn rs8）→ M4 实时麦克风(Web Audio)+IQ+Tauri → M5(可选) Web/Tauri 全平台
-- Go 1.26.1 (homebrew)；模块名 `ssxv`；main 分支直开开发，superpowers 流程按里程碑走
+## 状态（2026-10-09 全部完成）
+- M0-M4 全部完成并推送 GitHub（Gulugll/SSXV_Master）：M0 Robot36 → M1 WASM+React → M2 17 模式 → M3 SSDV(RS+BPSK) → M4 实时麦克风+IQ+Tauri
+- M5 不单列（Tauri 打包即覆盖）。待真实验证：真机麦克风收 ISS 信号、真实 SDR IQ 语料
+- 重要教训：.gitignore 写 `ssxv-cli`（无斜杠）曾把 cmd/ssxv-cli/ 从所有历史排除——仓库根二进制规则必须带 `/` 前缀
+- Go 1.26.1 (homebrew)；Rust stable（~/.cargo）；模块名 `ssxv`；main 分支直开开发，superpowers 流程按里程碑走
