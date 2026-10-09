@@ -54,6 +54,7 @@ class SSXVCore {
             w: msg.w,
             h: msg.h,
             ms: msg.ms,
+            mode: msg.mode,
             fileName: this.pendingFile.get(id) ?? file.name,
           });
         } else if (msg.type === 'error') {

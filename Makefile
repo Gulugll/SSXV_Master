@@ -2,7 +2,7 @@
 GO=go
 WASM_SRC := ./cmd/ssxv-wasm
 WASM_OUT := web/public/wasm/ssxv.wasm
-WASM_EXEC_SRC := web/src/wasm_exec.js
+WASM_EXEC_SRC := web/src/vendor/go_wasm_exec.js
 WASM_EXEC := $(shell $(GO) env GOROOT)/lib/wasm/wasm_exec.js
 
 .PHONY: wasm web cli all test

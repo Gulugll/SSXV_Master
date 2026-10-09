@@ -6,6 +6,7 @@ export interface DecodeMeta {
   h: number;
   ms: number;
   fileName: string;
+  mode: string;
 }
 
 export type WorkerRequest =
@@ -21,7 +22,7 @@ let goReady: Promise<void> | null = null;
 
 async function loadWasm(): Promise<void> {
   // Go 官方胶水（IIFE，执行后挂 globalThis.Go），由 Vite 打包进 worker
-  await import('../wasm_exec.js');
+  await import('../vendor/go_wasm_exec.js');
   if (typeof (globalThis as any).Go !== 'function') {
     throw new Error('E_INTERNAL: wasm_exec.js 加载失败');
   }
@@ -44,6 +45,7 @@ interface DecodeResult {
   ok: boolean;
   w?: number;
   h?: number;
+  mode?: string;
   pngLen?: number;
   error?: string;
 }
@@ -62,7 +64,7 @@ function decodeWavSync(wav: ArrayBuffer): { png: Uint8Array; meta: Omit<DecodeMe
   if (n !== res.pngLen) {
     throw new Error('E_INTERNAL: 图像字节长度不匹配');
   }
-  return { png, meta: { w: res.w!, h: res.h!, ms } };
+  return { png, meta: { w: res.w!, h: res.h!, ms, mode: res.mode ?? '?' } };
 }
 
 self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
@@ -77,7 +79,7 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
       await ensureReady();
       const { png, meta } = decodeWavSync(req.wav);
       self.postMessage(
-        { type: 'decoded', id: req.id, png, ms: meta.ms, w: meta.w, h: meta.h, fileName: req.fileName },
+        { type: 'decoded', id: req.id, png, ms: meta.ms, w: meta.w, h: meta.h, mode: meta.mode, fileName: req.fileName },
         // Transferable：避免大数组拷贝
         [png.buffer as ArrayBuffer],
       );
