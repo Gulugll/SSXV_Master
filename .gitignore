@@ -1,9 +1,12 @@
 .DS_Store
-ssxv-cli
+/ssxv-cli
 out/
-ssxv-cli
 sample_*.wav
 sample_*.png
+sample_*.cs16
+sample_*.cf32
+sample_*.cu8
+sample_*.iq
 web/node_modules
 web/dist
 web/public/wasm/ssxv.wasm

@@ -16,6 +16,8 @@ import (
 func main() {
 	modeName := flag.String("mode", "Robot36", "模式名")
 	npkt := flag.Int("packets", 0, "SSDV: 只取前 N 包（0=全部）")
+	iqFmt := flag.String("iq", "", "IQ 输出格式 cu8|cs16|cf32（空=输出 WAV）")
+	iqIf := flag.Float64("if", 6000, "IQ IF 偏移 Hz")
 	flag.Parse()
 
 	modes := map[string]sstv.ModeSpec{
@@ -26,6 +28,29 @@ func main() {
 		"WraaseSC2180": sstv.WraaseSC2180(), "WraaseSC2120": sstv.WraaseSC2120(),
 		"PasokonP3": sstv.PasokonP3(), "PasokonP5": sstv.PasokonP5(), "PasokonP7": sstv.PasokonP7(),
 	}
+	if *iqFmt != "" {
+		// IQ 样例：模式段序列 → IF 偏移复基带（与 pipeline.DecodeIQResult 互逆）
+		f, ok := map[string]testgen.IQFormat{"cu8": testgen.IQCU8, "cs16": testgen.IQCS16, "cf32": testgen.IQCF32}[*iqFmt]
+		if !ok {
+			fmt.Fprintln(os.Stderr, "未知 IQ 格式:", *iqFmt)
+			os.Exit(1)
+		}
+		mode, ok := modes[*modeName]
+		if !ok {
+			fmt.Fprintln(os.Stderr, "未知模式:", *modeName)
+			os.Exit(1)
+		}
+		img := gradient(mode.Width, mode.Height)
+		segs := testgen.EncodeMode(mode, img, 48000)
+		name := "sample_" + *modeName + "." + *iqFmt
+		if err := os.WriteFile(name, testgen.IQUpconvertSegs(segs, 48000, *iqIf, f), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("生成: %s (%s, IF=%.0fHz, %dHz)\n", name, *iqFmt, *iqIf, 48000)
+		return
+	}
+
 	if *modeName == "SSDV" {
 		// SSDV 样例：黄金语料包流 → BPSK 调制 → WAV
 		pkt, err := os.ReadFile("testdata/ssdv/packets.bin")
@@ -69,4 +94,20 @@ func main() {
 	wav.Write(testgen.WriteWav16(testgen.ModeTone(mode, img, 48000), 48000))
 	wav.Close()
 	fmt.Printf("生成: sample_%s.wav (%dHz, %dx%d) + sample_want.png\n", *modeName, 48000, mode.Width, mode.Height)
+}
+
+// gradient 生成模式尺寸的平滑渐变图（与 pipeline 测试同风格）。
+func gradient(w, h int) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.NRGBA{
+				R: uint8((x * 255) / w),
+				G: uint8((y * 255) / h),
+				B: uint8(((x + y) * 255) / (w + h)),
+				A: 255,
+			})
+		}
+	}
+	return img
 }
