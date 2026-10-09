@@ -98,3 +98,15 @@ h2 { font-size: 16px; margin: 0 0 8px; color: #444; }
 }
 .gallery li.sel { border-color: #2f6fed; }
 .gallery img { border-radius: 4px; image-rendering: pixelated; }
+
+.live {
+  margin-top: 28px;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e2e5ea;
+  border-radius: 12px;
+}
+.live .hint { color: #667; font-size: 13px; margin: 4px 0 12px; }
+.live .meta { margin-left: 12px; }
+.live button:disabled { opacity: 0.5; cursor: not-allowed; }
+.live img { margin-top: 8px; }

@@ -9,6 +9,7 @@
 //	ssxvVersion() → number                      // ABI 版本
 //	ssxvDecodeWav(Uint8Array wav) → object      // {ok, w, h, ms, pngLen} 或 {ok:false, error}
 //	ssxvGetImage(Uint8Array dst) → number       // 拷贝最近一次解码的 PNG 字节，返回实际长度
+//	ssxvDecodePCM(Int16Array pcm, sampleRate) → object  // 实时链路：int16 PCM 快照解码（M4）
 package main
 
 import (
@@ -30,6 +31,24 @@ func init() {
 	}))
 	g.Set("ssxvDecodeWav", js.FuncOf(decodeWav))
 	g.Set("ssxvGetImage", js.FuncOf(getImage))
+	g.Set("ssxvDecodePCM", js.FuncOf(decodePCM))
+}
+
+// encodeResult 把解码结果编码为 PNG 并填 lastPNG，返回给 JS 的结果对象。
+func encodeResult(res pipeline.DecodeResult) map[string]any {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, res.Image); err != nil {
+		return map[string]any{"ok": false, "error": "E_INTERNAL: png encode: " + err.Error()}
+	}
+	lastPNG = buf.Bytes()
+	b := res.Image.Bounds()
+	return map[string]any{
+		"ok":     true,
+		"w":      b.Dx(),
+		"h":      b.Dy(),
+		"mode":   res.Mode,
+		"pngLen": len(lastPNG),
+	}
 }
 
 func decodeWav(this js.Value, args []js.Value) any {
@@ -46,19 +65,35 @@ func decodeWav(this js.Value, args []js.Value) any {
 	if err != nil {
 		return fail("E_DEMOD: " + err.Error())
 	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, res.Image); err != nil {
-		return fail("E_INTERNAL: png encode: " + err.Error())
+	return encodeResult(res)
+}
+
+// decodePCM 实时链路：int16 PCM + 采样率快照解码（输入在原生采样率处理，
+// 见 pipeline.DecodePCM 注释；48k 麦克风直推即可，无需前端重采样）。
+func decodePCM(this js.Value, args []js.Value) any {
+	fail := func(msg string) any {
+		return map[string]any{"ok": false, "error": msg}
 	}
-	lastPNG = buf.Bytes()
-	b := res.Image.Bounds()
-	return map[string]any{
-		"ok":     true,
-		"w":      b.Dx(),
-		"h":      b.Dy(),
-		"mode":   res.Mode,
-		"pngLen": len(lastPNG),
+	if len(args) < 2 || args[0].Type() != js.TypeObject {
+		return fail("E_ARG: 需要 Int16Array 与 sampleRate 参数")
 	}
+	src := args[0]
+	n := src.Get("length").Int()
+	pcm := make([]int16, n)
+	// 经 Uint8Array 视图拷出原始小端字节，再拼 int16
+	u8 := js.Global().Get("Uint8Array").New(src.Get("buffer"), src.Get("byteOffset"), src.Get("byteLength"))
+	buf := make([]byte, u8.Get("byteLength").Int())
+	js.CopyBytesToGo(buf, u8)
+	for i := 0; i < n; i++ {
+		pcm[i] = int16(uint16(buf[2*i]) | uint16(buf[2*i+1])<<8)
+	}
+	fs := args[1].Int()
+
+	res, err := pipeline.DecodePCMResult(pcm, fs)
+	if err != nil {
+		return fail("E_DEMOD: " + err.Error())
+	}
+	return encodeResult(res)
 }
 
 func getImage(this js.Value, args []js.Value) any {
