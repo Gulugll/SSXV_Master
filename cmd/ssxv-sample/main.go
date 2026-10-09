@@ -15,6 +15,7 @@ import (
 
 func main() {
 	modeName := flag.String("mode", "Robot36", "模式名")
+	npkt := flag.Int("packets", 0, "SSDV: 只取前 N 包（0=全部）")
 	flag.Parse()
 
 	modes := map[string]sstv.ModeSpec{
@@ -24,6 +25,25 @@ func main() {
 		"PD180": sstv.PD180(), "PD240": sstv.PD240(), "PD290": sstv.PD290(),
 		"WraaseSC2180": sstv.WraaseSC2180(), "WraaseSC2120": sstv.WraaseSC2120(),
 		"PasokonP3": sstv.PasokonP3(), "PasokonP5": sstv.PasokonP5(), "PasokonP7": sstv.PasokonP7(),
+	}
+	if *modeName == "SSDV" {
+		// SSDV 样例：黄金语料包流 → BPSK 调制 → WAV
+		pkt, err := os.ReadFile("testdata/ssdv/packets.bin")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "读取 testdata/ssdv/packets.bin 失败:", err)
+			os.Exit(1)
+		}
+		if *npkt > 0 && *npkt < len(pkt)/256 {
+			pkt = pkt[:*npkt*256]
+		}
+		wav, _ := os.Create("sample_ssdv.wav")
+		// 补 2 字节填充：解调器末符号判决窗超出信号末端会截断尾包
+		// （真实发射末尾亦有静音冗余）
+		pkt = append(pkt, 0, 0)
+		wav.Write(testgen.WriteWav16(testgen.BPSKModulate(pkt, 48000), 48000))
+		wav.Close()
+		fmt.Printf("生成: sample_ssdv.wav (BPSK 200bd, %d 包)\n", len(pkt)/256-1)
+		return
 	}
 	mode, ok := modes[*modeName]
 	if !ok {

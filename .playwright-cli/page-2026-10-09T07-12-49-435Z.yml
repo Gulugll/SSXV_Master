@@ -1,0 +1,6 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "SSXV_Manager" [level=1] [ref=e5]
+    - generic [ref=e6]: SSTV / SSDV 解码 · Robot36 已支持
+    - generic [ref=e7]: 核心就绪
+  - paragraph [ref=e9]: 解码中…

@@ -2,11 +2,14 @@
 package pipeline
 
 import (
+	"bytes"
 	"fmt"
 	"image"
+	"image/jpeg"
 
 	"ssxv/internal/dsp"
 	"ssxv/internal/source"
+	"ssxv/internal/ssdv"
 	"ssxv/internal/sstv"
 )
 
@@ -46,11 +49,22 @@ func DecodePCM(pcm []int16, fs int) (image.Image, error) {
 }
 
 // DecodePCMResult 同 DecodePCM，附带模式名。
+// 自动识别：先尝试 SSTV（VIS 头检测），失败则按 SSDV BPSK 链路解调
+// （TECH_SPEC §6）。SSDV 输出为 JPEG 字节，经 image/jpeg 还原。
 func DecodePCMResult(pcm []int16, fs int) (DecodeResult, error) {
 	x := make([]float32, len(pcm))
 	for i, v := range pcm {
 		x[i] = float32(v) / 32767
 	}
+
+	if r, err := decodeSSTV(x, fs); err == nil {
+		return r, nil
+	}
+	return decodeSSDV(x, fs)
+}
+
+// decodeSSTV SSTV 链路（M0-M2）。
+func decodeSSTV(x []float32, fs int) (DecodeResult, error) {
 	// 温和 IIR 带通（2 阶 Butterworth 700-3400，Q≈0.57）：把解调噪声带宽从
 	// 24kHz 压到 ~2.7kHz（-9.5dB），振铃仅 ~6 样本（0.12ms），不污染像素窗。
 	// 窄带 FIR 方案已被实测否决（阶跃振铃拖尾 ~10ms，U 形误差，见 PLAN_M0）。
@@ -68,4 +82,18 @@ func DecodePCMResult(pcm []int16, fs int) (DecodeResult, error) {
 		return DecodeResult{}, fmt.Errorf("pipeline: 未知 VIS %#02x", vis)
 	}
 	return DecodeResult{Image: sstv.DecodeMode(freq, float32(fs), mode, start), Mode: mode.Name}, nil
+}
+
+// decodeSSDV SSDV 链路（M3）：BPSK 解调 → 包解析/RS/JPEG 重组。
+func decodeSSDV(x []float32, fs int) (DecodeResult, error) {
+	data := ssdv.DemodBPSK(x, fs)
+	jpgBytes, info, err := ssdv.DecodeSSDV(data)
+	if err != nil {
+		return DecodeResult{}, fmt.Errorf("pipeline: SSTV/SSDV 均未识别出有效信号")
+	}
+	img, err := jpeg.Decode(bytes.NewReader(jpgBytes))
+	if err != nil {
+		return DecodeResult{}, fmt.Errorf("pipeline: SSDV JPEG 解码失败: %w", err)
+	}
+	return DecodeResult{Image: img, Mode: "SSDV " + info.Callsign}, nil
 }
